@@ -3,7 +3,9 @@ package grpc_sentry
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/getsentry/sentry-go"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
@@ -42,13 +44,18 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 		}
 
 		md, _ := metadata.FromIncomingContext(ctx) // nil check in ContinueFromGrpcMetadata
-		span := sentry.StartSpan(ctx, "grpc.server", ContinueFromGrpcMetadata(md))
+		span := sentry.StartSpan(ctx, fmt.Sprintf("grpc.server%s", strings.ReplaceAll(info.FullMethod, "/", ".")), ContinueFromGrpcMetadata(md))
+		span.SetTag("grpc_method", info.FullMethod)
+		txNames := md.Get("sentry-tx-name")
+		if len(txNames) == 0 {
+			hub.Scope().SetExtra("requestBody", req)
+			hub.Scope().SetTransaction(info.FullMethod)
+		} else {
+			hub.Scope().SetTransaction(txNames[0])
+		}
+
 		ctx = span.Context()
 		defer span.Finish()
-
-		// TODO: Perhaps makes sense to use SetRequestBody instead?
-		hub.Scope().SetExtra("requestBody", req)
-		hub.Scope().SetTransaction(info.FullMethod)
 		defer recoverWithSentry(hub, ctx, o)
 
 		resp, err := handler(ctx, req)
@@ -61,7 +68,6 @@ func UnaryServerInterceptor(opts ...Option) grpc.UnaryServerInterceptor {
 			hub.CaptureException(err)
 		}
 		span.Status = toSpanStatus(status.Code(err))
-
 		return resp, err
 	}
 }
