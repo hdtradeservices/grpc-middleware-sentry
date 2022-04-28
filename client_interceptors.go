@@ -2,6 +2,8 @@ package grpc_sentry
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"google.golang.org/grpc/metadata"
 
@@ -25,7 +27,7 @@ func UnaryClientInterceptor(opts ...Option) grpc.UnaryClientInterceptor {
 			ctx = sentry.SetHubOnContext(ctx, hub)
 		}
 
-		span := sentry.StartSpan(ctx, "grpc.client")
+		span := sentry.StartSpan(ctx, fmt.Sprintf("grpc.client%s", strings.ReplaceAll(method, "/", ".")))
 		ctx = span.Context()
 		md := metadata.Pairs("sentry-trace", span.ToSentryTrace(), "sentry-tx-name", hub.Scope().Transaction())
 		ctx = metadata.NewOutgoingContext(ctx, md)
